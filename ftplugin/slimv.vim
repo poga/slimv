@@ -112,7 +112,7 @@ function! SlimvSwankCommand()
                 else
                     " doubles quotes within 'cmd' need to become '\\\"'
                     return '!osascript -e "tell application \"Terminal\" to do script \"' . escape(escape(cmd, '"'), '\"') . '\""'
-                endif 
+                endif
         elseif $DISPLAY == ''
             " No X, no terminal multiplexer. Cannot run swank server.
             call SlimvErrorWait( 'No X server. Run Vim from screen/tmux or start SWANK server manually.' )
@@ -342,13 +342,15 @@ let s:arglist_line = 0                                    " Arglist was requeste
 let s:arglist_col = 0                                     " ... and column
 let s:inspect_path = []                                   " Inspection path of the current object
 let s:skip_sc = 'synIDattr(synID(line("."), col("."), 0), "name") =~ "[Ss]tring\\|[Cc]omment"'
-                                                          " Skip matches inside string or comment 
+                                                          " Skip matches inside string or comment
 let s:skip_q = 'getline(".")[col(".")-2] == "\\"'         " Skip escaped double quote characters in matches
 let s:frame_def = '^\s\{0,2}\d\{1,}:'                     " Regular expression to match SLDB restart or frame identifier
 let s:spec_indent = 'flet\|labels\|macrolet\|symbol-macrolet'
                                                           " List of symbols need special indenting
 let s:spec_param = 'defmacro'                             " List of symbols with special parameter list
 let s:binding_form = 'let\|let\*'                         " List of symbols with binding list
+
+let s:eval_and_replace = 0                                " SWANK response should replace evaluated form
 
 " =====================================================================
 "  General utility functions
@@ -375,14 +377,14 @@ function! s:SinceVersion( ver )
     else
         return 0
     endif
-endfunction 
+endfunction
 
 " Display an error message
 function! SlimvError( msg )
     echohl ErrorMsg
     echo a:msg
     echohl None
-endfunction 
+endfunction
 
 " Display an error message and a question, return user response
 function! SlimvErrorAsk( msg, question )
@@ -391,18 +393,18 @@ function! SlimvErrorAsk( msg, question )
     echo ""
     echohl None
     return answer
-endfunction 
+endfunction
 
 " Display an error message and wait for ENTER
 function! SlimvErrorWait( msg )
     call SlimvErrorAsk( a:msg, " Press ENTER to continue." )
-endfunction 
+endfunction
 
 " Shorten long messages to fit status line
 function! SlimvShortEcho( msg )
     let saved=&shortmess
     set shortmess+=T
-    exe "normal! :echomsg a:msg\n" 
+    exe "normal! :echomsg a:msg\n"
     let &shortmess=saved
 endfunction
 
@@ -512,10 +514,19 @@ function! SlimvSwankResponse()
     elseif s:swank_ok_result != ''
         " Display the :ok result also in status bar in case the REPL buffer is not shown
         let s:swank_ok_result = substitute(s:swank_ok_result,"\<LF>",'','g')
+
+        " save evaluation result to register r
+        let @r = s:swank_ok_result
         if s:swank_ok_result == ''
             call SlimvShortEcho( '=> OK' )
         else
             call SlimvShortEcho( '=> ' . s:swank_ok_result )
+        endif
+
+        " if s:eval_and_replace is set, replace evaluated form with result
+        if s:eval_and_replace == 1
+          execute 'normal! gv"rp'
+          let s:eval_and_replace = 0
         endif
     endif
     if s:swank_actions_pending
@@ -1230,7 +1241,7 @@ function! SlimvSelectForm( extended )
     endif
     silent! normal v
     call searchpair( '(', '', ')', 'W', s:skip_sc )
-    if &selection == 'exclusive' 
+    if &selection == 'exclusive'
         silent! normal l
     endif
     let p1 = getpos('.')
@@ -1662,7 +1673,7 @@ function SlimvLispindent( lnum )
         endif
         let c = c + 1
     endwhile
-    if total_extra == 0  
+    if total_extra == 0
         " No multi-byte character, lispindent() is OK
         return li
     endif
@@ -1925,7 +1936,7 @@ function! SlimvIndentUnsafe( lnum )
         return li + gap - 2
     endif
     return li
-endfunction 
+endfunction
 
 " Indentation routine, keeps original cursor position
 function! SlimvIndent( lnum )
@@ -2646,7 +2657,7 @@ function! SlimvArglist( ... )
                 redraw
                 if SlimvGetFiletype() == 'r'
                     call SlimvShortEcho( arg . '(' . msg . ')' )
-                elseif match( msg, "\\V" . arg ) != 1 " Use \V ('very nomagic') for exact string match instead of regex 
+                elseif match( msg, "\\V" . arg ) != 1 " Use \V ('very nomagic') for exact string match instead of regex
                     " Function name is not received from REPL
                     call SlimvShortEcho( "(" . arg . ' ' . msg[1:] )
                 else
@@ -2668,7 +2679,7 @@ function! SlimvConnectServer()
         let s:swank_connected = 0
 	" Give swank server some time for disconnecting
         sleep 500m
-    endif 
+    endif
     if SlimvConnectSwank()
         let repl_win = bufwinnr( s:repl_buf )
         if s:repl_buf == -1 || ( g:slimv_repl_split && repl_win == -1 )
@@ -2686,7 +2697,7 @@ function! SlimvGetRegion(first, last)
         " No range was selected, select current paragraph
         normal! vap
         execute "normal! \<Esc>"
-        call winrestview( oldpos ) 
+        call winrestview( oldpos )
         let lines = getline( "'<", "'>" )
         if lines == [] || lines == ['']
             call SlimvError( "No range selected." )
@@ -2704,7 +2715,7 @@ function! SlimvGetRegion(first, last)
 
     " Find and set package/namespace definition preceding the region
     call SlimvFindPackage()
-    call winrestview( oldpos ) 
+    call winrestview( oldpos )
     return lines
 endfunction
 
@@ -2811,12 +2822,19 @@ function! SlimvEvalTestDefun( testform )
         return
     endif
     call SlimvFindPackage()
-    call winrestview( oldpos ) 
+    call winrestview( oldpos )
     call SlimvEvalSelection( outreg, a:testform )
 endfunction
 
 " Evaluate top level form at the cursor pos
 function! SlimvEvalDefun()
+    call SlimvEvalTestDefun( '' )
+endfunction
+
+
+" Evaluate top level form at the cursor pos AND replace evaled form
+function! SlimvEvalDefunAndReplace()
+    let s:eval_and_replace = 1
     call SlimvEvalTestDefun( '' )
 endfunction
 
@@ -2871,12 +2889,18 @@ function! SlimvEvalTestExp( testform )
         return
     endif
     call SlimvFindPackage()
-    call winrestview( oldpos ) 
+    call winrestview( oldpos )
     call SlimvEvalSelection( outreg, a:testform )
 endfunction
 
 " Evaluate current s-expression at the cursor pos
 function! SlimvEvalExp()
+    call SlimvEvalTestExp( '' )
+endfunction
+
+" Evaluate current s-expression at the cursor pos AND replace evaluated form
+function! SlimvEvalExpAndReplace()
+    let s:eval_and_replace = 1
     call SlimvEvalTestExp( '' )
 endfunction
 
@@ -3157,7 +3181,7 @@ endfunction
 function! SlimvCompileDefun()
     let oldpos = winsaveview()
     if !SlimvSelectDefun()
-        call winrestview( oldpos ) 
+        call winrestview( oldpos )
         return
     endif
     if SlimvConnectSwank()
@@ -3259,7 +3283,7 @@ function! SlimvDescribe(arg)
     if a:arg == ''
         let arg = expand('<cword>')
     endif
-    " We don't want to try connecting here ... the error message would just 
+    " We don't want to try connecting here ... the error message would just
     " confuse the balloon logic
     if !s:swank_connected || s:read_string_mode
         return ''
@@ -3416,7 +3440,7 @@ function! SlimvComplete( base )
     if a:base == ''
         return []
     endif
-    if s:swank_connected && !s:read_string_mode
+    if s: && !s:read_string_mode
         " Save current buffer and window in case a swank command causes a buffer change
         let buf = bufnr( "%" )
         if winnr('$') < 2
@@ -3789,4 +3813,3 @@ command! -complete=customlist,SlimvCommandComplete -nargs=* Eval call SlimvEval(
 if !exists("g:syntax_on")
     syntax on
 endif
-
