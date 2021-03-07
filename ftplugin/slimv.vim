@@ -3440,7 +3440,7 @@ function! SlimvComplete( base )
     if a:base == ''
         return []
     endif
-    if s: && !s:read_string_mode
+    if s:swank_connected && !s:read_string_mode
         " Save current buffer and window in case a swank command causes a buffer change
         let buf = bufnr( "%" )
         if winnr('$') < 2
